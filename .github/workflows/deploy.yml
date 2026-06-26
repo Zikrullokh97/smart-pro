@@ -1,4 +1,4 @@
-name: Deploy EduSphere Pro
+name: Production Deployment
 
 on:
   push:
@@ -7,152 +7,196 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  # Job 1: Validate and Test Backend
+  backend-test:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_USER: edusphere
-          POSTGRES_PASSWORD: edusphere123
-          POSTGRES_DB: edusphere_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-
+    defaults:
+      run:
+        working-directory: apps/backend
     steps:
       - uses: actions/checkout@v4
-
+      
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
-
+          cache-dependency-path: apps/backend/package-lock.json
+      
       - name: Install dependencies
         run: npm ci
-
-      - name: Run backend tests
-        working-directory: apps/backend
-        run: |
-          npm ci
-          npm run test
+      
+      - name: Generate Prisma Client
+        run: npx prisma generate
         env:
-          DATABASE_URL: postgresql://edusphere:edusphere123@localhost:5432/edusphere_test?schema=public
-          JWT_SECRET: test-secret-key-for-testing-only
-          JWT_REFRESH_SECRET: test-refresh-secret-key-for-testing-only
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      
+      - name: Lint
+        run: npm run lint
+      
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      
+      - name: Build
+        run: npm run build
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          NODE_ENV: production
 
-  build:
-    needs: test
+  # Job 2: Validate and Test Frontend
+  frontend-test:
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main'
-
+    defaults:
+      run:
+        working-directory: apps/frontend
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-        if: github.ref == 'refs/heads/main'
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: npm install
+      
+      - name: Lint
+        run: npm run lint
+      
+      - name: TypeScript check
+        run: npx tsc --noEmit
+      
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
 
-      - name: Build and push Frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./apps/frontend/Dockerfile
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/edusphere-frontend:latest
-            ${{ secrets.DOCKER_USERNAME }}/edusphere-frontend:${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/edusphere-frontend:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/edusphere-frontend:buildcache,mode=max
-
-      - name: Build and push Backend
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./apps/backend/Dockerfile
-          push: ${{ github.ref == 'refs/heads/main' }}
-          tags: |
-            ${{ secrets.DOCKER_USERNAME }}/edusphere-api:latest
-            ${{ secrets.DOCKER_USERNAME }}/edusphere-api:${{ github.sha }}
-          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/edusphere-api:buildcache
-          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/edusphere-api:buildcache,mode=max
-
-  deploy:
-    needs: build
+  # Job 3: Deploy Backend to Render
+  deploy-backend:
+    needs: [backend-test]
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: production
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Deploy to Server
-        uses: appleboy/ssh-action@v1.0.3
+      
+      - name: Deploy to Render
+        uses: render-examples/deploy-to-render@v1
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            cd /opt/edusphere-pro
+          service-id: ${{ secrets.RENDER_SERVICE_ID }}
+          api-key: ${{ secrets.RENDER_API_KEY }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          JWT_REFRESH_SECRET: ${{ secrets.JWT_REFRESH_SECRET }}
+          JWT_EXPIRATION: 15m
+          JWT_REFRESH_EXPIRATION: 7d
+          NODE_ENV: production
+          PORT: 10000
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
-            # Pull latest code
-            git pull origin main
-
-            # Create .env file
-            cat > .env << EOF
-            POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-            POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-            POSTGRES_DB=edusphere_pro
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
-            JWT_REFRESH_SECRET=${{ secrets.JWT_REFRESH_SECRET }}
-            JWT_EXPIRATION=15m
-            JWT_REFRESH_EXPIRATION=7d
-            FRONTEND_URL=https://${{ secrets.DOMAIN }}
-            NEXT_PUBLIC_API_URL=https://${{ secrets.DOMAIN }}/api
-            NODE_ENV=production
-            EOF
-
-            # Pull latest images
-            docker-compose pull
-
-            # Run migrations
-            docker-compose run --rm api npx prisma migrate deploy
-
-            # Seed database (only on first deploy)
-            # docker-compose run --rm api npx prisma db seed
-
-            # Restart services
-            docker-compose up -d
-
-            # Clean up old images
-            docker image prune -f
-
-            # Verify deployment
-            sleep 10
-            curl -f https://${{ secrets.DOMAIN }}/api/health || exit 1
-
-  notify:
-    needs: deploy
+  # Job 4: Deploy Frontend to Vercel
+  deploy-frontend:
+    needs: [frontend-test]
     runs-on: ubuntu-latest
-    if: always()
-
+    if: github.ref == 'refs/heads/main'
     steps:
-      - name: Notify Success
-        if: needs.deploy.result == 'success'
-        run: echo "✅ Deployment successful!"
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./apps/frontend
+          vercel-args: '--prod'
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
 
-      - name: Notify Failure
-        if: needs.deploy.result == 'failure'
-        run: echo "❌ Deployment failed!"
+  # Job 5: Run Database Migrations
+  migrate-database:
+    needs: [deploy-backend]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/backend/package-lock.json
+      
+      - name: Install dependencies
+        run: |
+          cd apps/backend
+          npm ci
+      
+      - name: Run Prisma Migrations
+        run: |
+          cd apps/backend
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      
+      - name: Seed Database (Optional)
+        if: false  # Set to true to enable seeding
+        run: |
+          cd apps/backend
+          npx ts-node prisma/seed.ts
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+  # Job 6: Health Check Validation
+  health-check:
+    needs: [deploy-backend, deploy-frontend, migrate-database]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Wait for deployment
+        run: sleep 30
+      
+      - name: Check Backend Health
+        run: |
+          curl -f ${{ secrets.BACKEND_URL }}/api/health || exit 1
+        env:
+          BACKEND_URL: ${{ secrets.BACKEND_URL }}
+      
+      - name: Check Frontend
+        run: |
+          curl -f ${{ secrets.FRONTEND_URL }} || exit 1
+        env:
+          FRONTEND_URL: ${{ secrets.FRONTEND_URL }}
+
+  # Job 7: Notify on Success
+  notify-success:
+    needs: [health-check]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && success()
+    steps:
+      - name: Send success notification
+        run: |
+          echo "✅ Deployment successful!"
+          echo "Backend: ${{ secrets.BACKEND_URL }}"
+          echo "Frontend: ${{ secrets.FRONTEND_URL }}"
+
+  # Job 8: Notify on Failure
+  notify-failure:
+    needs: [backend-test, frontend-test, deploy-backend, deploy-frontend, migrate-database, health-check]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && failure()
+    steps:
+      - name: Send failure notification
+        run: |
+          echo "❌ Deployment failed!"
+          echo "Check logs at: https://github.com/${{ github.repository }}/actions"
