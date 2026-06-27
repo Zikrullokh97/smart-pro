@@ -28,19 +28,6 @@ export class RolesService {
             permission: true,
           },
         },
-        userRoles: {
-          select: {
-            id: true,
-            user: {
-              select: {
-                id: true,
-                email: true,
-                firstName: true,
-                lastName: true,
-              },
-            },
-          },
-        },
       },
     });
 

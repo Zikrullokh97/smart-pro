@@ -1,35 +1,33 @@
-import { Controller, Post, Body, UseGuards, Request, Get } from '@nestjs/common';
+import { Controller, Post, Get, Body, Request, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { LocalAuthGuard } from './guards/local-auth.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
-import { RefreshTokenGuard } from './guards/refresh-token.guard';
+import { Permissions } from './decorators/permissions.decorator';
 
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
 
-  @UseGuards(LocalAuthGuard)
   @Post('login')
-  async login(@Request() req) {
-    return this.authService.login(req.user);
+  async login(@Body() loginDto: any) {
+    return this.authService.login(loginDto);
   }
 
-  @UseGuards(RefreshTokenGuard)
   @Post('refresh')
-  async refreshTokens(@Request() req) {
-    return this.authService.refreshTokens(req.user.refreshToken);
+  @UseGuards(JwtAuthGuard)
+  async refresh(@Request() req) {
+    return this.authService.refreshToken(req.user.refreshToken);
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post('logout')
+  @UseGuards(JwtAuthGuard)
   async logout(@Request() req) {
-    await this.authService.revokeRefreshToken(req.user.refreshToken);
+    await this.authService.logout(req.user.refreshToken);
     return { message: 'Logged out successfully' };
   }
 
+  @Get('me')
   @UseGuards(JwtAuthGuard)
-  @Get('workspace')
-  async getWorkspace(@Request() req) {
-    return this.authService.getWorkspace(req.user.userId);
+  async getMe(@Request() req) {
+    return this.authService.getMe(req.user.userId);
   }
 }

@@ -10,31 +10,31 @@ export class TeachersController {
 
   @Post()
   @Permissions('teachers.create')
-  create(@Body() createTeacherDto: any, @Request() req) {
-    return this.teachersService.create(createTeacherDto, req.user.userId);
+  create(@Body() createTeacherDto: any) {
+    return this.teachersService.create(createTeacherDto);
   }
 
   @Get()
   @Permissions('teachers.view')
-  findAll(@Request() req) {
-    return this.teachersService.findAll(req.user);
+  findAll() {
+    return this.teachersService.findAll();
   }
 
   @Get(':id')
   @Permissions('teachers.view')
-  findOne(@Param('id') id: string, @Request() req) {
-    return this.teachersService.findOne(id, req.user);
+  findOne(@Param('id') id: string) {
+    return this.teachersService.findOne(id);
   }
 
   @Patch(':id')
   @Permissions('teachers.edit')
-  update(@Param('id') id: string, @Body() updateTeacherDto: any, @Request() req) {
-    return this.teachersService.update(id, updateTeacherDto, req.user);
+  update(@Param('id') id: string, @Body() updateTeacherDto: any) {
+    return this.teachersService.update(id, updateTeacherDto);
   }
 
   @Delete(':id')
   @Permissions('teachers.delete')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.teachersService.remove(id, req.user);
+  remove(@Param('id') id: string) {
+    return this.teachersService.remove(id);
   }
 }

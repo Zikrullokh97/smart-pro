@@ -16,25 +16,25 @@ export class ParentPortalController {
 
   @Get('children/:studentId/attendance')
   @Permissions('attendance.view')
-  getChildAttendance(@Param('studentId') studentId: string, @Request() req) {
-    return this.parentPortalService.getChildAttendance(studentId, req.user.userId);
+  getChildAttendance(@Param('studentId') studentId: string) {
+    return this.parentPortalService.getChildAttendance(studentId);
   }
 
   @Get('children/:studentId/grades')
   @Permissions('grades.view')
-  getChildGrades(@Param('studentId') studentId: string, @Request() req) {
-    return this.parentPortalService.getChildGrades(studentId, req.user.userId);
+  getChildGrades(@Param('studentId') studentId: string) {
+    return this.parentPortalService.getChildGrades(studentId);
   }
 
   @Get('children/:studentId/homework')
   @Permissions('homework.view')
-  getChildHomework(@Param('studentId') studentId: string, @Request() req) {
-    return this.parentPortalService.getChildHomework(studentId, req.user.userId);
+  getChildHomework(@Param('studentId') studentId: string) {
+    return this.parentPortalService.getChildHomework(studentId);
   }
 
   @Get('children/:studentId/schedule')
   @Permissions('schedule.view')
-  getChildSchedule(@Param('studentId') studentId: string, @Request() req) {
-    return this.parentPortalService.getChildSchedule(studentId, req.user.userId);
+  getChildSchedule(@Param('studentId') studentId: string) {
+    return this.parentPortalService.getChildSchedule(studentId);
   }
 }

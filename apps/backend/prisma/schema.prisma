@@ -20,7 +20,6 @@ model School {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users         User[]
   students      Student[]
   teachers      Teacher[]
   classes       Class[]
@@ -28,6 +27,15 @@ model School {
   auditLogs     AuditLog[]
   notifications Notification[]
   aiActions     AIAction[]
+  attendances   Attendance[]
+  grades        Grade[]
+  homeworks     Homework[]
+  schedules     Schedule[]
+  reports       Report[]
+  psychological Psychological[]
+  health        Health[]
+  discipline    Discipline[]
+  aiRequests    AIRequest[]
 
   @@map("schools")
 }
@@ -63,6 +71,11 @@ model User {
   auditLogs   AuditLog[]
   notifications Notification[]
   aiActions   AIAction[]
+  teacher     Teacher?
+  parent      Parent?
+  student     Student?
+  refreshTokens RefreshToken[]
+  aiRequests  AIRequest[]
 
   @@map("users")
 }
@@ -115,6 +128,7 @@ model UserRole {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   roleId    String
   role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  scope     Json?
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
@@ -128,10 +142,11 @@ model Student {
   school       School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
   classId      String
   class        Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  userId       String?  @unique
   firstName    String
   lastName     String
-  firstNameKy  String?
-  lastNameKy   String?
+  firstNameKy   String?
+  lastNameKy    String?
   dateOfBirth  DateTime
   gender       String
   address      String?
@@ -144,8 +159,12 @@ model Student {
   parents        StudentParent[]
   attendances    Attendance[]
   grades         Grade[]
-  homeworks      Homework[]
   faceData       FaceData?
+  psychological  Psychological[]
+  health         Health[]
+  discipline     Discipline[]
+  classStudents  ClassStudent[]
+  user           User?    @relation(fields: [userId], references: [id])
 
   @@map("students")
 }
@@ -195,6 +214,7 @@ model Teacher {
   attendances Attendance[]
   grades      Grade[]
   homeworks   Homework[]
+  schedules   Schedule[]
 
   @@map("teachers")
 }
@@ -215,10 +235,12 @@ model Class {
   updatedAt    DateTime @updatedAt
 
   students     ClassStudent[]
+  studentList  Student[]
   attendances  Attendance[]
   grades       Grade[]
   homeworks    Homework[]
   schedule     Schedule[]
+  teacher      Teacher? @relation(fields: [classTeacherId], references: [id])
 
   @@map("classes")
 }
@@ -243,6 +265,8 @@ model Attendance {
   class       Class           @relation(fields: [classId], references: [id], onDelete: Cascade)
   schoolId    String
   school      School          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherId   String?
+  teacher     Teacher?        @relation(fields: [teacherId], references: [id])
   date        DateTime        @db.Date
   status      AttendanceStatus
   method      AttendanceMethod @default(MANUAL)
@@ -280,6 +304,8 @@ model Grade {
   subjectId   String
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherId   String?
+  teacher     Teacher? @relation(fields: [teacherId], references: [id])
   value       Int
   maxValue    Int      @default(5)
   recordedBy  String
@@ -297,6 +323,8 @@ model Homework {
   subjectId   String
   schoolId    String
   school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  teacherId   String?
+  teacher     Teacher? @relation(fields: [teacherId], references: [id])
   title       String
   description String?
   dueDate     DateTime
@@ -319,6 +347,7 @@ model Schedule {
   endTime     DateTime
   subject     String
   teacherId   String
+  teacher     Teacher  @relation(fields: [teacherId], references: [id])
   room        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -459,4 +488,31 @@ enum AIActionStatus {
   REJECTED
   MODIFIED
   EXECUTED
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model AIRequest {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  agentType   String
+  prompt      String
+  response    String?
+  tokensUsed  Int?
+  createdAt   DateTime @default(now())
+
+  @@map("ai_requests")
 }

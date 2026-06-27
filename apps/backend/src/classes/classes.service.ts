@@ -12,49 +12,29 @@ export class ClassesService {
       },
       include: {
         school: true,
-        classTeacher: true,
+        teacher: true,
         students: true,
-        subjects: {
-          include: {
-            subject: true,
-            teacher: true,
-          },
-        },
       },
     });
   }
 
   async findAll(user: any) {
     const where: any = {};
-    
-    if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { userId: user.userId, isActive: true },
-        select: { scope: true },
-      });
-      
-      const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
-      if (classIds.length > 0) {
-        where.id = { in: classIds };
-      }
-    }
 
     return this.prisma.class.findMany({
       where,
       include: {
         school: true,
-        classTeacher: true,
+        teacher: true,
         students: {
-          select: {
-            id: true,
-            firstName: true,
-            lastName: true,
-          },
-        },
-        subjects: {
           include: {
-            subject: true,
-            teacher: true,
+            student: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
           },
         },
       },
@@ -66,15 +46,9 @@ export class ClassesService {
       where: { id },
       include: {
         school: true,
-        classTeacher: true,
+        teacher: true,
         students: true,
-        subjects: {
-          include: {
-            subject: true,
-            teacher: true,
-          },
-        },
-        schedules: true,
+        schedule: true,
       },
     });
 
@@ -99,14 +73,8 @@ export class ClassesService {
       data: updateClassDto,
       include: {
         school: true,
-        classTeacher: true,
+        teacher: true,
         students: true,
-        subjects: {
-          include: {
-            subject: true,
-            teacher: true,
-          },
-        },
       },
     });
   }
@@ -130,19 +98,11 @@ export class ClassesService {
   async getClassStudents(classId: string) {
     return this.prisma.student.findMany({
       where: { classId, isActive: true },
-      include: {
-        user: true,
-      },
     });
   }
 
   async getClassSubjects(classId: string) {
-    return this.prisma.classSubject.findMany({
-      where: { classId },
-      include: {
-        subject: true,
-        teacher: true,
-      },
-    });
+    // Subject model not fully integrated yet
+    return [];
   }
 }

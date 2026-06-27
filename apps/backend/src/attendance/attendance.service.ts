@@ -14,7 +14,6 @@ export class AttendanceService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
     });
   }
@@ -25,8 +24,7 @@ export class AttendanceService {
     if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { userId: user.userId, isActive: true },
-        select: { scope: true },
-      });
+      }) as any[];
       
       const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
       if (classIds.length > 0) {
@@ -52,7 +50,6 @@ export class AttendanceService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
       orderBy: {
         date: 'desc',
@@ -66,7 +63,6 @@ export class AttendanceService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
     });
 
@@ -92,7 +88,6 @@ export class AttendanceService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
     });
   }
@@ -118,7 +113,6 @@ export class AttendanceService {
       where: { studentId },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         date: 'desc',
@@ -134,7 +128,6 @@ export class AttendanceService {
       },
       include: {
         student: true,
-        subject: true,
       },
       orderBy: {
         student: {

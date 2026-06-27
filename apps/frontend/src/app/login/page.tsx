@@ -20,9 +20,9 @@ export default function LoginPage() {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { user, accessToken, permissions, modules } = response.data;
+      const { user } = response.data;
       
-      setAuth(user, accessToken, modules);
+      setAuth(user);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.message || 'Login failed');

@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
-import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class AuthService {
@@ -13,17 +13,25 @@ export class AuthService {
   async validateUser(email: string, password: string): Promise<any> {
     const user = await this.prisma.user.findUnique({
       where: { email },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
+
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId: user.id, isActive: true },
       include: {
-        userRoles: {
-          where: { isActive: true },
+        role: {
           include: {
-            role: {
+            permissions: {
               include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
+                permission: true,
               },
             },
           },
@@ -31,38 +39,30 @@ export class AuthService {
       },
     });
 
-    if (!user || !user.password) {
-      return null;
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-      return null;
-    }
+    const roles = userRoles.map(ur => ur.role.name);
+    const permissions = userRoles.flatMap(ur =>
+      ur.role.permissions.map(p => p.permission.name)
+    );
 
     const { password: _, ...result } = user;
-    return result;
+    return {
+      ...result,
+      roles,
+      permissions,
+    };
   }
 
   async login(user: any) {
     const payload = {
-      userId: user.id,
+      sub: user.id,
       email: user.email,
-      roles: user.userRoles.map(ur => ur.role.name),
-      permissions: user.userRoles.flatMap(ur =>
-        ur.role.permissions.map(p => p.permission.name)
-      ),
+      roles: user.roles,
+      permissions: user.permissions,
     };
 
     const accessToken = this.jwtService.sign(payload);
-    
-    const refreshToken = this.jwtService.sign(
-      { userId: user.id },
-      { expiresIn: '7d', secret: process.env.JWT_REFRESH_SECRET }
-    );
+    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
 
-    await this.cleanupExpiredTokens(user.id);
-    
     await this.prisma.refreshToken.create({
       data: {
         token: refreshToken,
@@ -79,65 +79,54 @@ export class AuthService {
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
-        roles: payload.roles,
-        permissions: payload.permissions,
+        roles: user.roles,
+        permissions: user.permissions,
       },
     };
   }
 
   async refreshToken(refreshToken: string) {
-    const tokenRecord = await this.prisma.refreshToken.findUnique({
-      where: { token: refreshToken },
-      include: {
-        user: {
-          include: {
-            userRoles: {
-              where: { isActive: true },
-              include: {
-                role: {
-                  include: {
-                    permissions: {
-                      include: {
-                        permission: true,
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
-    });
+    try {
+      const payload = this.jwtService.verify(refreshToken);
+      const tokenRecord = await this.prisma.refreshToken.findUnique({
+        where: { token: refreshToken },
+      });
 
-    if (!tokenRecord || tokenRecord.isRevoked || tokenRecord.expiresAt < new Date()) {
-      throw new UnauthorizedException('Invalid refresh token');
-    }
+      if (!tokenRecord || tokenRecord.isRevoked || tokenRecord.expiresAt < new Date()) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
 
-    await this.cleanupExpiredTokens(tokenRecord.userId);
+      const user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
 
-    const payload = {
-      userId: tokenRecord.user.id,
-      email: tokenRecord.user.email,
-      roles: tokenRecord.user.userRoles.map(ur => ur.role.name),
-      permissions: tokenRecord.user.userRoles.flatMap(ur =>
-        ur.role.permissions.map(p => p.permission.name)
-      ),
-    };
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
 
-    const accessToken = this.jwtService.sign(payload);
-
-    return {
-      accessToken,
-      user: {
-        id: tokenRecord.user.id,
-        email: tokenRecord.user.email,
-        firstName: tokenRecord.user.firstName,
-        lastName: tokenRecord.user.lastName,
+      const newPayload = {
+        sub: user.id,
+        email: user.email,
         roles: payload.roles,
         permissions: payload.permissions,
-      },
-    };
+      };
+
+      const accessToken = this.jwtService.sign(newPayload);
+
+      return {
+        accessToken,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          roles: payload.roles,
+          permissions: payload.permissions,
+        },
+      };
+    } catch (error) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
   }
 
   async logout(refreshToken: string) {
@@ -145,36 +134,22 @@ export class AuthService {
       where: { token: refreshToken },
       data: { isRevoked: true },
     });
-
     return { message: 'Logged out successfully' };
   }
 
-  private async cleanupExpiredTokens(userId: string) {
-    await this.prisma.refreshToken.deleteMany({
-      where: {
-        userId,
-        OR: [
-          { expiresAt: { lt: new Date() } },
-          { isRevoked: true },
-        ],
-      },
-    });
+  async getMe(userId: string) {
+    return this.getProfile(userId);
   }
 
-  async getMe(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  async getProfile(userId: string) {
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId, isActive: true },
       include: {
-        userRoles: {
-          where: { isActive: true },
+        role: {
           include: {
-            role: {
+            permissions: {
               include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
+                permission: true,
               },
             },
           },
@@ -182,11 +157,24 @@ export class AuthService {
       },
     });
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
 
-    const { password: _, ...result } = user;
-    return result;
+    const roles = userRoles.map(ur => ur.role.name);
+    const permissions = userRoles.flatMap(ur =>
+      ur.role.permissions.map(p => p.permission.name)
+    );
+
+    const { password, ...result } = user;
+    return {
+      ...result,
+      roles,
+      permissions,
+    };
   }
 }

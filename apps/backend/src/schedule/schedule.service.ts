@@ -13,7 +13,6 @@ export class ScheduleService {
       },
       include: {
         class: true,
-        subject: true,
         teacher: true,
       },
     });
@@ -23,16 +22,6 @@ export class ScheduleService {
     const where: any = {};
     
     if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
-      const userRoles = await this.prisma.userRole.findMany({
-        where: { userId: user.userId, isActive: true },
-        select: { scope: true },
-      });
-      
-      const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
-      if (classIds.length > 0) {
-        where.classId = { in: classIds };
-      }
-      
       where.teacherId = user.userId;
     }
     
@@ -62,7 +51,6 @@ export class ScheduleService {
       where,
       include: {
         class: true,
-        subject: true,
         teacher: true,
       },
       orderBy: {
@@ -76,7 +64,6 @@ export class ScheduleService {
       where: { id },
       include: {
         class: true,
-        subject: true,
         teacher: true,
       },
     });
@@ -102,7 +89,6 @@ export class ScheduleService {
       data: updateScheduleDto,
       include: {
         class: true,
-        subject: true,
         teacher: true,
       },
     });
@@ -126,9 +112,8 @@ export class ScheduleService {
 
   async getClassSchedule(classId: string) {
     return this.prisma.schedule.findMany({
-      where: { classId, isActive: true },
+      where: { classId },
       include: {
-        subject: true,
         teacher: true,
       },
       orderBy: {
@@ -140,10 +125,9 @@ export class ScheduleService {
 
   async getTeacherSchedule(teacherId: string) {
     return this.prisma.schedule.findMany({
-      where: { teacherId, isActive: true },
+      where: { teacherId },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         dayOfWeek: 'asc',

@@ -1,6 +1,6 @@
 import { PrismaService } from '../prisma/prisma.service';
 import { Injectable, OnModuleInit } from '@nestjs/common';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class SeedData implements OnModuleInit {
@@ -189,7 +189,7 @@ export class SeedData implements OnModuleInit {
     }
 
     // Create 1000 attendance records
-    const statuses = ['present', 'absent', 'late', 'excused'];
+    const statuses = ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'] as const;
     for (let i = 0; i < 1000; i++) {
       const student = students[Math.floor(Math.random() * students.length)];
       const date = new Date();
@@ -556,9 +556,10 @@ export class SeedData implements OnModuleInit {
 
     const roles: any = {};
     for (const [key, role] of Object.entries(roleData)) {
+      const { permissions: _, ...roleDataWithoutPermissions } = role;
       const createdRole = await this.prisma.role.create({
         data: {
-          ...role,
+          ...roleDataWithoutPermissions,
           isSystem: true,
         },
       });

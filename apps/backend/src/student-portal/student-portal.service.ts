@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -7,98 +7,121 @@ export class StudentPortalService {
 
   async getProfile(userId: string) {
     const student = await this.prisma.student.findFirst({
-      where: { id: userId },
+      where: {
+        user: {
+          id: userId,
+        },
+      },
       include: {
-        class: {
-          include: {
-            school: true,
-          },
-        },
-        parents: {
-          include: {
-            parent: true,
-          },
-        },
+        class: true,
+        school: true,
       },
     });
 
     if (!student) {
-      throw new NotFoundException('Student not found');
+      throw new Error('Student profile not found');
     }
 
     return student;
   }
 
   async getAttendance(userId: string) {
-    await this.verifyStudentAccess(userId);
+    const student = await this.prisma.student.findFirst({
+      where: {
+        user: {
+          id: userId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!student) {
+      return [];
+    }
 
     return this.prisma.attendance.findMany({
-      where: { studentId: userId },
+      where: { studentId: student.id },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         date: 'desc',
       },
+      take: 30,
     });
   }
 
   async getGrades(userId: string) {
-    await this.verifyStudentAccess(userId);
+    const student = await this.prisma.student.findFirst({
+      where: {
+        user: {
+          id: userId,
+        },
+      },
+      select: { id: true },
+    });
+
+    if (!student) {
+      return [];
+    }
 
     return this.prisma.grade.findMany({
-      where: { studentId: userId },
+      where: { studentId: student.id },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
-        date: 'desc',
+        createdAt: 'desc',
       },
     });
   }
 
   async getHomework(userId: string) {
-    await this.verifyStudentAccess(userId);
-
-    const student = await this.prisma.student.findUnique({
-      where: { id: userId },
+    const student = await this.prisma.student.findFirst({
+      where: {
+        user: {
+          id: userId,
+        },
+      },
       select: { classId: true },
     });
 
     if (!student) {
-      throw new NotFoundException('Student not found');
+      return [];
     }
 
     return this.prisma.homework.findMany({
-      where: { classId: student.classId },
+      where: {
+        classId: student.classId,
+        isActive: true,
+      },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         dueDate: 'desc',
       },
+      take: 20,
     });
   }
 
   async getSchedule(userId: string) {
-    await this.verifyStudentAccess(userId);
-
-    const student = await this.prisma.student.findUnique({
-      where: { id: userId },
+    const student = await this.prisma.student.findFirst({
+      where: {
+        user: {
+          id: userId,
+        },
+      },
       select: { classId: true },
     });
 
     if (!student) {
-      throw new NotFoundException('Student not found');
+      return [];
     }
 
     return this.prisma.schedule.findMany({
-      where: { classId: student.classId, isActive: true },
+      where: { classId: student.classId },
       include: {
-        subject: true,
         teacher: true,
       },
       orderBy: {
@@ -108,13 +131,27 @@ export class StudentPortalService {
     });
   }
 
-  private async verifyStudentAccess(userId: string) {
-    const student = await this.prisma.student.findFirst({
-      where: { id: userId },
+  async getNotifications(userId: string) {
+    return this.prisma.notification.findMany({
+      where: { userId },
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 50,
+    });
+  }
+
+  async markNotificationRead(notificationId: string, userId: string) {
+    await this.prisma.notification.updateMany({
+      where: {
+        id: notificationId,
+        userId,
+      },
+      data: {
+        isRead: true,
+      },
     });
 
-    if (!student) {
-      throw new ForbiddenException('Access denied');
-    }
+    return { success: true };
   }
 }

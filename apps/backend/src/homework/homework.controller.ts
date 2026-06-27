@@ -22,19 +22,19 @@ export class HomeworkController {
 
   @Get(':id')
   @Permissions('homework.view')
-  findOne(@Param('id') id: string, @Request() req) {
-    return this.homeworkService.findOne(id, req.user);
+  findOne(@Param('id') id: string) {
+    return this.homeworkService.findOne(id);
   }
 
   @Patch(':id')
   @Permissions('homework.edit')
-  update(@Param('id') id: string, @Body() updateHomeworkDto: any, @Request() req) {
-    return this.homeworkService.update(id, updateHomeworkDto, req.user);
+  update(@Param('id') id: string, @Body() updateHomeworkDto: any) {
+    return this.homeworkService.update(id, updateHomeworkDto);
   }
 
   @Delete(':id')
   @Permissions('homework.delete')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.homeworkService.remove(id, req.user);
+  remove(@Param('id') id: string) {
+    return this.homeworkService.remove(id);
   }
 }

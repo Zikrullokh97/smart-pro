@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -15,18 +15,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
+    const userRoles = await this.prisma.userRole.findMany({
+      where: { userId: payload.sub, isActive: true },
       include: {
-        userRoles: {
+        role: {
           include: {
-            role: {
+            permissions: {
               include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
+                permission: true,
               },
             },
           },
@@ -34,25 +30,25 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       },
     });
 
-    if (!user) {
+    if (userRoles.length === 0) {
       throw new UnauthorizedException();
     }
 
     const permissions: string[] = [];
-    user.userRoles.forEach((ur) => {
+    userRoles.forEach((ur) => {
       if (ur.role.permissions) {
         ur.role.permissions.forEach((rp) => {
-          if (rp.isGranted) {
-            permissions.push(`${rp.permission.module}.${rp.permission.action}`);
+          if (rp.permission) {
+            permissions.push(rp.permission.name);
           }
         });
       }
     });
 
     return {
-      userId: user.id,
-      email: user.email,
-      roles: user.userRoles.map((ur) => ur.role.name),
+      userId: payload.sub,
+      email: payload.email,
+      roles: userRoles.map((ur) => ur.role.name),
       permissions,
     };
   }

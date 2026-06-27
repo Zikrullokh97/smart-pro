@@ -11,31 +11,31 @@ export class UsersController {
 
   @Post()
   @Permissions('users.create')
-  create(@Body() createUserDto: CreateUserDto, @Request() req) {
-    return this.usersService.create(createUserDto, req.user.userId);
+  create(@Body() createUserDto: CreateUserDto) {
+    return this.usersService.create(createUserDto);
   }
 
   @Get()
   @Permissions('users.view')
-  findAll(@Request() req) {
-    return this.usersService.findAll(req.user);
+  findAll() {
+    return this.usersService.findAll();
   }
 
   @Get(':id')
   @Permissions('users.view')
-  findOne(@Param('id') id: string, @Request() req) {
-    return this.usersService.findOne(id, req.user);
+  findOne(@Param('id') id: string) {
+    return this.usersService.findOne(id);
   }
 
   @Patch(':id')
   @Permissions('users.edit')
-  update(@Param('id') id: string, @Body() updateUserDto: any, @Request() req) {
-    return this.usersService.update(id, updateUserDto, req.user);
+  update(@Param('id') id: string, @Body() updateUserDto: any) {
+    return this.usersService.update(id, updateUserDto);
   }
 
   @Delete(':id')
   @Permissions('users.delete')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.usersService.remove(id, req.user);
+  remove(@Param('id') id: string) {
+    return this.usersService.remove(id);
   }
 }

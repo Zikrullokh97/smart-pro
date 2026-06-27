@@ -1,5 +1,4 @@
-import { Controller, Post, UseGuards, Request, Body, UploadedFile, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request } from '@nestjs/common';
 import { FaceRecognitionService } from './face-recognition.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Permissions } from '../auth/decorators/permissions.decorator';
@@ -10,32 +9,15 @@ export class FaceRecognitionController {
   constructor(private readonly faceRecognitionService: FaceRecognitionService) {}
 
   @Post('register')
-  @Permissions('attendance.manage')
-  @UseInterceptors(FileInterceptor('photo'))
-  async registerFace(
-    @Request() req,
-    @UploadedFile() photo: Express.Multer.File,
-    @Body('studentId') studentId: string
-  ) {
-    return this.faceRecognitionService.registerFace(studentId, photo, req.user.userId);
+  @Permissions('students.manage')
+  async registerFace(@Body() registerDto: any, @Request() req) {
+    return this.faceRecognitionService.registerFace(registerDto, req.user.userId);
   }
 
-  @Post('recognize')
+  @Post('verify')
   @Permissions('attendance.manage')
-  @UseInterceptors(FileInterceptor('photo'))
-  async recognizeFace(@UploadedFile() photo: Express.Multer.File) {
-    return this.faceRecognitionService.recognizeFace(photo);
-  }
-
-  @Post('attendance/batch')
-  @Permissions('attendance.manage')
-  @UseInterceptors(FileInterceptor('photo'))
-  async markAttendanceBatch(
-    @Request() req,
-    @UploadedFile() photo: Express.Multer.File,
-    @Body('classId') classId: string
-  ) {
-    return this.faceRecognitionService.markAttendanceBatch(classId, photo, req.user.userId);
+  async verifyFace(@Body() verifyDto: any) {
+    return this.faceRecognitionService.verifyFace(verifyDto);
   }
 
   @Get('students/:studentId')

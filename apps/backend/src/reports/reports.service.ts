@@ -26,10 +26,9 @@ export class ReportsService {
     if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { userId: user.userId, isActive: true },
-        select: { scope: true },
       });
       
-      const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
+      const classIds = userRoles.map(ur => ur.roleId);
       if (classIds.length > 0) {
         where.classId = { in: classIds };
       }
@@ -51,16 +50,15 @@ export class ReportsService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
     });
 
     const stats = {
       total: attendance.length,
-      present: attendance.filter(a => a.status === 'present').length,
-      absent: attendance.filter(a => a.status === 'absent').length,
-      late: attendance.filter(a => a.status === 'late').length,
-      excused: attendance.filter(a => a.status === 'excused').length,
+      present: attendance.filter(a => a.status === 'PRESENT').length,
+      absent: attendance.filter(a => a.status === 'ABSENT').length,
+      late: attendance.filter(a => a.status === 'LATE').length,
+      excused: attendance.filter(a => a.status === 'EXCUSED').length,
     };
 
     return {
@@ -75,10 +73,9 @@ export class ReportsService {
     if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { userId: user.userId, isActive: true },
-        select: { scope: true },
       });
       
-      const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
+      const classIds = userRoles.map(ur => ur.roleId);
       if (classIds.length > 0) {
         where.classId = { in: classIds };
       }
@@ -101,7 +98,6 @@ export class ReportsService {
       include: {
         student: true,
         class: true,
-        subject: true,
       },
     });
 
@@ -124,10 +120,9 @@ export class ReportsService {
     if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
       const userRoles = await this.prisma.userRole.findMany({
         where: { userId: user.userId, isActive: true },
-        select: { scope: true },
       });
       
-      const classIds = userRoles.flatMap(ur => ur.scope?.classIds || []);
+      const classIds = userRoles.map(ur => ur.roleId);
       if (classIds.length > 0) {
         where.classId = { in: classIds };
       }
@@ -142,12 +137,8 @@ export class ReportsService {
       include: {
         class: true,
         school: true,
-        grades: {
-          include: {
-            subject: true,
-          },
-        },
-        attendance: true,
+        grades: true,
+        attendances: true,
       },
     });
 

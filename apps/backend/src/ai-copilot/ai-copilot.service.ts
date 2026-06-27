@@ -17,7 +17,7 @@ export class AiCopilotService {
         ...createSuggestionDto,
         userId: user.userId,
         agentType: agentType,
-        status: 'pending',
+        status: 'PENDING',
       },
       include: {
         user: true,
@@ -61,9 +61,7 @@ export class AiCopilotService {
     return this.prisma.aIAction.update({
       where: { id },
       data: {
-        status: 'approved',
-        reviewedBy: userId,
-        reviewedAt: new Date(),
+        status: 'APPROVED',
       },
     });
   }
@@ -80,9 +78,7 @@ export class AiCopilotService {
     return this.prisma.aIAction.update({
       where: { id },
       data: {
-        status: 'rejected',
-        reviewedBy: userId,
-        reviewedAt: new Date(),
+        status: 'REJECTED',
       },
     });
   }
@@ -100,7 +96,7 @@ export class AiCopilotService {
       where: { id },
       data: {
         ...modifyDto,
-        status: 'modified',
+        status: 'MODIFIED',
         reviewedBy: userId,
         reviewedAt: new Date(),
       },

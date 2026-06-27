@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -6,99 +6,89 @@ export class ParentPortalService {
   constructor(private prisma: PrismaService) {}
 
   async getChildren(parentId: string) {
-    const studentParents = await this.prisma.studentParent.findMany({
-      where: { parentId },
+    const parent = await this.prisma.parent.findUnique({
+      where: { userId: parentId },
       include: {
-        student: {
+        children: {
           include: {
-            class: true,
-            school: true,
+            student: {
+              include: {
+                class: true,
+                school: true,
+              },
+            },
           },
         },
       },
     });
 
-    return studentParents.map(sp => ({
-      id: sp.student.id,
-      firstName: sp.student.firstName,
-      lastName: sp.student.lastName,
-      relationship: sp.relationship,
-      isPrimary: sp.isPrimary,
-      class: sp.student.class,
-      school: sp.student.school,
-    }));
+    return parent?.children || [];
   }
 
-  async getChildAttendance(studentId: string, parentId: string) {
-    await this.verifyParentAccess(studentId, parentId);
-
-    return this.prisma.attendance.findMany({
+  async getChildAttendance(studentId: string) {
+    const attendance = await this.prisma.attendance.findMany({
       where: { studentId },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         date: 'desc',
       },
     });
+
+    return attendance;
   }
 
-  async getChildGrades(studentId: string, parentId: string) {
-    await this.verifyParentAccess(studentId, parentId);
-
-    return this.prisma.grade.findMany({
+  async getChildGrades(studentId: string) {
+    const grades = await this.prisma.grade.findMany({
       where: { studentId },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
-        date: 'desc',
+        createdAt: 'desc',
       },
     });
+
+    return grades;
   }
 
-  async getChildHomework(studentId: string, parentId: string) {
-    await this.verifyParentAccess(studentId, parentId);
-
+  async getChildHomework(studentId: string) {
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },
       select: { classId: true },
     });
 
     if (!student) {
-      throw new NotFoundException('Student not found');
+      return [];
     }
 
-    return this.prisma.homework.findMany({
+    const homework = await this.prisma.homework.findMany({
       where: { classId: student.classId },
       include: {
         class: true,
-        subject: true,
       },
       orderBy: {
         dueDate: 'desc',
       },
     });
+
+    return homework;
   }
 
-  async getChildSchedule(studentId: string, parentId: string) {
-    await this.verifyParentAccess(studentId, parentId);
-
+  async getChildSchedule(studentId: string) {
     const student = await this.prisma.student.findUnique({
       where: { id: studentId },
       select: { classId: true },
     });
 
     if (!student) {
-      throw new NotFoundException('Student not found');
+      return [];
     }
 
-    return this.prisma.schedule.findMany({
-      where: { classId: student.classId, isActive: true },
+    const schedule = await this.prisma.schedule.findMany({
+      where: { classId: student.classId },
       include: {
-        subject: true,
         teacher: true,
       },
       orderBy: {
@@ -106,18 +96,7 @@ export class ParentPortalService {
         startTime: 'asc',
       },
     });
-  }
 
-  private async verifyParentAccess(studentId: string, parentId: string) {
-    const studentParent = await this.prisma.studentParent.findFirst({
-      where: {
-        studentId,
-        parentId,
-      },
-    });
-
-    if (!studentParent) {
-      throw new ForbiddenException('You do not have access to this student');
-    }
+    return schedule;
   }
 }
