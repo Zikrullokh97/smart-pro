@@ -1,13 +1,19 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
+import { CookieOptions } from 'express';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
+  readonly refreshTokenCookieName = 'refreshToken';
+
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private configService: ConfigService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -53,21 +59,14 @@ export class AuthService {
   }
 
   async login(user: any) {
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      roles: user.roles,
-      permissions: user.permissions,
-    };
-
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
+    const accessToken = this.signAccessToken(user);
+    const refreshToken = this.signRefreshToken(user);
 
     await this.prisma.refreshToken.create({
       data: {
-        token: refreshToken,
+        token: this.hashRefreshToken(refreshToken),
         userId: user.id,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        expiresAt: this.getRefreshExpiresAt(),
       },
     });
 
@@ -87,9 +86,12 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
-      const payload = this.jwtService.verify(refreshToken);
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: this.getRefreshSecret(),
+      });
+      const tokenHash = this.hashRefreshToken(refreshToken);
       const tokenRecord = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshToken },
+        where: { token: tokenHash },
       });
 
       if (!tokenRecord || tokenRecord.isRevoked || tokenRecord.expiresAt < new Date()) {
@@ -104,24 +106,33 @@ export class AuthService {
         throw new UnauthorizedException('User not found');
       }
 
-      const newPayload = {
-        sub: user.id,
-        email: user.email,
-        roles: payload.roles,
-        permissions: payload.permissions,
-      };
+      const authUser = await this.getProfile(payload.sub);
+      const accessToken = this.signAccessToken(authUser);
+      const newRefreshToken = this.signRefreshToken(authUser);
 
-      const accessToken = this.jwtService.sign(newPayload);
+      await this.prisma.refreshToken.update({
+        where: { id: tokenRecord.id },
+        data: { isRevoked: true },
+      });
+
+      await this.prisma.refreshToken.create({
+        data: {
+          token: this.hashRefreshToken(newRefreshToken),
+          userId: user.id,
+          expiresAt: this.getRefreshExpiresAt(),
+        },
+      });
 
       return {
         accessToken,
+        refreshToken: newRefreshToken,
         user: {
-          id: user.id,
-          email: user.email,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          roles: payload.roles,
-          permissions: payload.permissions,
+          id: authUser.id,
+          email: authUser.email,
+          firstName: authUser.firstName,
+          lastName: authUser.lastName,
+          roles: authUser.roles,
+          permissions: authUser.permissions,
         },
       };
     } catch (error) {
@@ -130,8 +141,9 @@ export class AuthService {
   }
 
   async logout(refreshToken: string) {
+    const tokenHash = this.hashRefreshToken(refreshToken);
     await this.prisma.refreshToken.updateMany({
-      where: { token: refreshToken },
+      where: { token: tokenHash },
       data: { isRevoked: true },
     });
     return { message: 'Logged out successfully' };
@@ -176,5 +188,89 @@ export class AuthService {
       roles,
       permissions,
     };
+  }
+
+  getRefreshCookieOptions(): CookieOptions {
+    return {
+      httpOnly: true,
+      secure: this.isProduction(),
+      sameSite: this.isProduction() ? 'none' : 'lax',
+      path: '/',
+      maxAge: this.getRefreshTtlMs(),
+    };
+  }
+
+  getClearRefreshCookieOptions(): CookieOptions {
+    const { maxAge, ...options } = this.getRefreshCookieOptions();
+    return options;
+  }
+
+  private signAccessToken(user: any): string {
+    return this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        roles: user.roles,
+        permissions: user.permissions,
+      },
+      {
+        secret: this.configService.get<string>('JWT_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_EXPIRATION', '15m'),
+      },
+    );
+  }
+
+  private signRefreshToken(user: any): string {
+    return this.jwtService.sign(
+      {
+        sub: user.id,
+        email: user.email,
+        tokenId: randomUUID(),
+      },
+      {
+        secret: this.getRefreshSecret(),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d'),
+      },
+    );
+  }
+
+  private hashRefreshToken(refreshToken: string): string {
+    return createHash('sha256').update(refreshToken).digest('hex');
+  }
+
+  private getRefreshSecret(): string {
+    return (
+      this.configService.get<string>('JWT_REFRESH_SECRET') ||
+      this.configService.get<string>('JWT_SECRET')
+    );
+  }
+
+  private getRefreshExpiresAt(): Date {
+    return new Date(Date.now() + this.getRefreshTtlMs());
+  }
+
+  private getRefreshTtlMs(): number {
+    const value = this.configService.get<string>('JWT_REFRESH_EXPIRATION', '7d');
+    const match = /^(\d+)(ms|s|m|h|d)?$/.exec(value);
+
+    if (!match) {
+      return 7 * 24 * 60 * 60 * 1000;
+    }
+
+    const amount = Number(match[1]);
+    const unit = match[2] || 'ms';
+    const multipliers: Record<string, number> = {
+      ms: 1,
+      s: 1000,
+      m: 60 * 1000,
+      h: 60 * 60 * 1000,
+      d: 24 * 60 * 60 * 1000,
+    };
+
+    return amount * multipliers[unit];
+  }
+
+  private isProduction(): boolean {
+    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 }

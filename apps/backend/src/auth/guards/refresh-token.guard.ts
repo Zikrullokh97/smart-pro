@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -13,7 +14,7 @@ export class RefreshTokenGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
-    const refreshToken = request.body.refreshToken || request.cookies?.refreshToken;
+    const refreshToken = this.extractRefreshToken(request);
 
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not provided');
@@ -21,33 +22,20 @@ export class RefreshTokenGuard implements CanActivate {
 
     try {
       const payload = this.jwtService.verify(refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        secret: this.getRefreshSecret(),
       });
+      const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
 
       const storedToken = await this.prisma.refreshToken.findUnique({
-        where: { token: refreshToken },
-        include: {
-          user: {
-            include: {
-              roles: {
-                include: {
-                  role: {
-                    include: {
-                      permissions: {
-                        include: {
-                          permission: true,
-                        },
-                      },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
+        where: { token: tokenHash },
       });
 
-      if (!storedToken || storedToken.isRevoked || storedToken.expiresAt < new Date()) {
+      if (
+        !storedToken ||
+        storedToken.userId !== payload.sub ||
+        storedToken.isRevoked ||
+        storedToken.expiresAt < new Date()
+      ) {
         throw new UnauthorizedException('Invalid refresh token');
       }
 
@@ -60,5 +48,33 @@ export class RefreshTokenGuard implements CanActivate {
     } catch (error) {
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  private extractRefreshToken(request: any): string | undefined {
+    if (request.cookies?.refreshToken) {
+      return request.cookies.refreshToken;
+    }
+
+    const cookieHeader = request.headers?.cookie;
+    if (!cookieHeader) {
+      return request.body?.refreshToken;
+    }
+
+    const cookies = cookieHeader.split(';').reduce((acc: Record<string, string>, cookie: string) => {
+      const [rawName, ...rawValue] = cookie.trim().split('=');
+      if (rawName && rawValue.length > 0) {
+        acc[rawName] = decodeURIComponent(rawValue.join('='));
+      }
+      return acc;
+    }, {});
+
+    return cookies.refreshToken || request.body?.refreshToken;
+  }
+
+  private getRefreshSecret(): string {
+    return (
+      this.configService.get<string>('JWT_REFRESH_SECRET') ||
+      this.configService.get<string>('JWT_SECRET')
+    );
   }
 }

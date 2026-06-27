@@ -5,7 +5,6 @@ import { DynamicSidebar } from '@/components/dynamic-sidebar';
 import { NotificationCenter } from '@/components/notification-center';
 import { AICopilotPanel } from '@/components/ai-copilot-panel';
 import { useAuthStore } from '@/lib/store';
-import { widgetFetchers } from '@/lib/widget-fetchers';
 
 interface User {
   id: string;
@@ -19,8 +18,8 @@ interface User {
 interface Widget {
   id: string;
   title: string;
-  type: string;
-  permissions: string[];
+  value: string | number;
+  permission: string;
 }
 
 export default function DashboardPage() {
@@ -28,9 +27,8 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAICopilot, setShowAICopilot] = useState(false);
-  const [widgetData, setWidgetData] = useState<Record<string, any>>({});
-  const [widgetErrors, setWidgetErrors] = useState<Record<string, string>>({});
-  const [retryCount, setRetryCount] = useState<Record<string, number>>({});
+  const [widgets, setWidgets] = useState<Widget[]>([]);
+  const [widgetError, setWidgetError] = useState<string | null>(null);
   
   const setUserFromStore = useAuthStore((state: any) => state.setUser);
   const isLoadingFromStore = useAuthStore((state: any) => state.isLoading);
@@ -75,43 +73,18 @@ export default function DashboardPage() {
   }, [user]);
 
   const fetchWidgetData = async () => {
-    const widgets = getWidgetsForUser();
-    const data: Record<string, any> = {};
-    const errors: Record<string, string> = {};
-
-    await Promise.all(
-      widgets.map(async (widget) => {
-        try {
-          const fetcher = widgetFetchers[widget.type as keyof typeof widgetFetchers];
-          if (fetcher) {
-            data[widget.id] = await fetcher();
-          }
-        } catch (error) {
-          errors[widget.id] = error instanceof Error ? error.message : 'Failed to load';
-          console.error(`Failed to fetch ${widget.id}:`, error);
-        }
-      })
-    );
-
-    setWidgetData(data);
-    setWidgetErrors(errors);
-  };
-
-  const retryWidget = async (widgetId: string, widgetType: string) => {
-    setRetryCount((prev: any) => ({ ...prev, [widgetId]: (prev[widgetId] || 0) + 1 }));
-    
     try {
-      const fetcher = widgetFetchers[widgetType as keyof typeof widgetFetchers];
-      if (fetcher) {
-        const data = await fetcher();
-        setWidgetData((prev: any) => ({ ...prev, [widgetId]: data }));
-        setWidgetErrors((prev: any) => ({ ...prev, [widgetId]: null }));
+      const response = await fetch('/api/dashboard/widgets', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error('Unable to load dashboard widgets');
       }
+
+      const data = await response.json();
+      setWidgets(data.widgets || []);
+      setWidgetError(null);
     } catch (error) {
-      setWidgetErrors((prev: any) => ({ 
-        ...prev, 
-        [widgetId]: error instanceof Error ? error.message : 'Failed to load' 
-      }));
+      setWidgetError(error instanceof Error ? error.message : 'Failed to load widgets');
+      setWidgets([]);
     }
   };
 
@@ -120,205 +93,21 @@ export default function DashboardPage() {
     return user.permissions.includes(permission);
   };
 
-  const getWidgetsForUser = (): Widget[] => {
-    if (!user) return [];
-    
-    const widgets: Widget[] = [];
-    
-    if (user.roles.includes('director')) {
-      widgets.push(
-        { id: 'kpi', title: 'KPI Dashboard', type: 'kpi', permissions: ['reports.view'] },
-        { id: 'analytics', title: 'Analytics', type: 'analytics', permissions: ['reports.view'] }
-      );
-    }
-    
-    if (user.roles.includes('academic_head')) {
-      widgets.push(
-        { id: 'schedule', title: 'Schedule Overview', type: 'schedule', permissions: ['schedule.view'] },
-        { id: 'teacher-load', title: 'Teacher Load', type: 'teacher-load', permissions: ['teachers.view'] },
-        { id: 'attendance-alerts', title: 'Attendance Alerts', type: 'attendance-alerts', permissions: ['attendance.view'] }
-      );
-    }
-    
-    if (user.roles.includes('teacher') || user.roles.includes('class_teacher')) {
-      widgets.push(
-        { id: 'classes', title: 'My Classes', type: 'classes', permissions: ['classes.view'] },
-        { id: 'journal', title: 'Grade Journal', type: 'journal', permissions: ['grades.view'] },
-        { id: 'homework', title: 'Homework', type: 'homework', permissions: ['homework.view'] }
-      );
-    }
-    
-    if (user.roles.includes('class_teacher')) {
-      widgets.push(
-        { id: 'class-monitoring', title: 'Class Monitoring', type: 'class-monitoring', permissions: ['students.view'] },
-        { id: 'parent-communication', title: 'Parent Communication', type: 'parent-communication', permissions: ['notifications.view'] }
-      );
-    }
-    
-    if (user.roles.includes('parent')) {
-      widgets.push(
-        { id: 'child-progress', title: 'Child Progress', type: 'child-progress', permissions: ['parent_portal.view'] }
-      );
-    }
-    
-    if (user.roles.includes('student')) {
-      widgets.push(
-        { id: 'my-homework', title: 'My Homework', type: 'homework', permissions: ['homework.view'] },
-        { id: 'my-grades', title: 'My Grades', type: 'grades', permissions: ['grades.view'] },
-        { id: 'my-schedule', title: 'My Schedule', type: 'schedule', permissions: ['schedule.view'] }
-      );
-    }
-    
-    return widgets.filter(w => hasPermission(w.permissions[0]));
-  };
-
-  const visibleWidgets = getWidgetsForUser();
-
   const renderWidgetContent = (widget: Widget) => {
-    const data = widgetData[widget.id];
-    const error = widgetErrors[widget.id];
-    const retries = retryCount[widget.id] || 0;
-
-    if (error) {
+    if (widgetError) {
       return (
-        <div className="text-center py-8">
-          <p className="text-red-600 mb-2">Failed to load data</p>
-          <button
-            onClick={() => retryWidget(widget.id, widget.type)}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Retry {retries > 0 ? `(${retries})` : ''}
-          </button>
+        <div className="text-center py-4">
+          <p className="text-red-600 mb-2">{widgetError}</p>
         </div>
       );
     }
 
-    if (!data) {
-      return (
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="text-gray-500 mt-2">Loading...</p>
-        </div>
-      );
-    }
-
-    switch (widget.type) {
-      case 'kpi':
-        return (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Students</span>
-              <span className="text-2xl font-bold text-blue-600">{data.studentCount}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Teachers</span>
-              <span className="text-2xl font-bold text-green-600">{data.teacherCount}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Attendance Rate</span>
-              <span className="text-2xl font-bold text-purple-600">{data.attendanceRate}%</span>
-            </div>
-          </div>
-        );
-
-      case 'analytics':
-        return (
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Average Grade</span>
-              <span className="text-2xl font-bold text-blue-600">{data.averageGrade}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-sm text-gray-600">Total Grades</span>
-              <span className="text-2xl font-bold text-green-600">{data.totalGrades}</span>
-            </div>
-          </div>
-        );
-
-      case 'classes':
-      case 'teacher-load':
-        return (
-          <div className="space-y-2">
-            {data.length > 0 ? (
-              data.slice(0, 5).map((item: any, idx: number) => (
-                <div key={idx} className="text-sm">
-                  <span className="font-medium">{item.name || item.firstName + ' ' + item.lastName}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-500">No data available</p>
-            )}
-          </div>
-        );
-
-      case 'homework':
-      case 'journal':
-        return (
-          <div className="space-y-2">
-            {data.length > 0 ? (
-              data.slice(0, 5).map((item: any, idx: number) => (
-                <div key={idx} className="text-sm">
-                  <span className="font-medium">{item.title || item.subject?.name}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-500">No data available</p>
-            )}
-          </div>
-        );
-
-      case 'attendance-alerts':
-        return (
-          <div className="space-y-2">
-            {data.length > 0 ? (
-              data.slice(0, 5).map((item: any, idx: number) => (
-                <div key={idx} className="text-sm">
-                  <span className="font-medium">{item.student?.firstName} {item.student?.lastName}</span>
-                  <span className="ml-2 text-red-600">({item.status})</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-green-600">No alerts</p>
-            )}
-          </div>
-        );
-
-      case 'class-monitoring':
-        return (
-          <div className="space-y-4">
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">Total Students</span>
-              <span className="text-xl font-bold">{data.totalStudents}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">Present Today</span>
-              <span className="text-xl font-bold text-green-600">{data.presentToday}</span>
-            </div>
-          </div>
-        );
-
-      case 'child-progress':
-        return (
-          <div className="space-y-2">
-            {data.children?.length > 0 ? (
-              data.children.map((child: any, idx: number) => (
-                <div key={idx} className="text-sm">
-                  <span className="font-medium">{child.student.firstName} {child.student.lastName}</span>
-                </div>
-              ))
-            ) : (
-              <p className="text-sm text-gray-500">No children data</p>
-            )}
-          </div>
-        );
-
-      default:
-        return (
-          <div className="text-sm text-gray-500">
-            {Array.isArray(data) ? `${data.length} items` : 'Data loaded'}
-          </div>
-        );
-    }
+    return (
+      <div className="text-center py-4">
+        <div className="text-3xl font-bold text-blue-600">{widget.value}</div>
+        <p className="text-sm text-gray-500 mt-2">{widget.title}</p>
+      </div>
+    );
   };
 
   if (isLoading) {
@@ -382,9 +171,9 @@ export default function DashboardPage() {
         {/* Main Content */}
         <main className="flex-1 overflow-y-auto p-6">
           {/* Widgets Grid */}
-          {visibleWidgets.length > 0 ? (
+          {widgets.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {visibleWidgets.map((widget) => (
+              {widgets.map((widget) => (
                 <div
                   key={widget.id}
                   className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 hover:shadow-md transition-shadow"
@@ -398,7 +187,9 @@ export default function DashboardPage() {
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-gray-500">No widgets available for your role</p>
+              <p className="text-gray-500">
+                {widgetError ? widgetError : 'No widgets available for your role'}
+              </p>
             </div>
           )}
         </main>

@@ -22,6 +22,7 @@ import { AuditModule } from './audit/audit.module';
 import { HealthModule } from './health/health.module';
 import { PsychologicalModule } from './psychological/psychological.module';
 import { DisciplineModule } from './discipline/discipline.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from './auth/guards/permissions.guard';
 import { AuditInterceptor } from './audit/audit.interceptor';
@@ -50,6 +51,7 @@ import { AuditInterceptor } from './audit/audit.interceptor';
     HealthModule,
     PsychologicalModule,
     DisciplineModule,
+    DashboardModule,
   ],
   providers: [
     {

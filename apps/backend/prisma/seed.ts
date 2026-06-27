@@ -93,10 +93,15 @@ async function main() {
     { id: 'perm-teachers-view', name: 'teachers.view', module: 'teachers', action: 'view', description: 'View teachers' },
     { id: 'perm-teachers-create', name: 'teachers.create', module: 'teachers', action: 'create', description: 'Create teachers' },
     { id: 'perm-teachers-edit', name: 'teachers.edit', module: 'teachers', action: 'edit', description: 'Edit teachers' },
+    { id: 'perm-classes-view', name: 'classes.view', module: 'classes', action: 'view', description: 'View classes' },
     { id: 'perm-attendance-view', name: 'attendance.view', module: 'attendance', action: 'view', description: 'View attendance' },
     { id: 'perm-attendance-edit', name: 'attendance.edit', module: 'attendance', action: 'edit', description: 'Edit attendance' },
     { id: 'perm-grades-view', name: 'grades.view', module: 'grades', action: 'view', description: 'View grades' },
     { id: 'perm-grades-edit', name: 'grades.edit', module: 'grades', action: 'edit', description: 'Edit grades' },
+    { id: 'perm-homework-view', name: 'homework.view', module: 'homework', action: 'view', description: 'View homework' },
+    { id: 'perm-notifications-view', name: 'notifications.view', module: 'notifications', action: 'view', description: 'View notifications' },
+    { id: 'perm-parent-portal-view', name: 'parent_portal.view', module: 'parent_portal', action: 'view', description: 'View parent portal' },
+    { id: 'perm-users-view', name: 'users.view', module: 'users', action: 'view', description: 'View users' },
     { id: 'perm-reports-view', name: 'reports.view', module: 'reports', action: 'view', description: 'View reports' },
     { id: 'perm-settings-view', name: 'settings.view', module: 'settings', action: 'view', description: 'View settings' },
     { id: 'perm-settings-edit', name: 'settings.edit', module: 'settings', action: 'edit', description: 'Edit settings' },
@@ -110,6 +115,27 @@ async function main() {
     });
   }
   console.log(`✅ ${permissions.length} permissions created`);
+
+  const assignPermissionsToRole = async (roleId: string, permissionNames: string[]) => {
+    for (const permissionName of permissionNames) {
+      const permission = await prisma.permission.findUnique({ where: { name: permissionName } });
+      if (!permission) {
+        continue;
+      }
+
+      await prisma.rolePermission.upsert({
+        where: {
+          id: `${roleId}_${permission.id}`,
+        },
+        update: {},
+        create: {
+          id: `${roleId}_${permission.id}`,
+          roleId,
+          permissionId: permission.id,
+        },
+      });
+    }
+  };
 
   // Assign all permissions to admin role
   for (const perm of permissions) {
@@ -126,6 +152,31 @@ async function main() {
     });
   }
   console.log('✅ Admin role assigned all permissions');
+
+  await assignPermissionsToRole(teacherRole.id, [
+    'dashboard.view',
+    'classes.view',
+    'attendance.view',
+    'grades.view',
+    'homework.view',
+    'notifications.view',
+    'students.view',
+  ]);
+
+  await assignPermissionsToRole(studentRole.id, [
+    'dashboard.view',
+    'attendance.view',
+    'grades.view',
+    'homework.view',
+    'notifications.view',
+  ]);
+
+  await assignPermissionsToRole(parentRole.id, [
+    'dashboard.view',
+    'parent_portal.view',
+    'notifications.view',
+  ]);
+  console.log('✅ Teacher, student, and parent roles assigned dashboard permissions');
 
   // Hash password
   const hashedPassword = await bcrypt.hash('Admin123!', 10);

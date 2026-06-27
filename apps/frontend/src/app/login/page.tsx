@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, setAccessToken } from '@/lib/api';
 import { useAuthStore } from '@/lib/store';
 
 export default function LoginPage() {
@@ -20,8 +20,9 @@ export default function LoginPage() {
 
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { user } = response.data;
+      const { accessToken, user } = response.data;
       
+      setAccessToken(accessToken);
       setAuth(user);
       router.push('/dashboard');
     } catch (err: any) {
